@@ -1,238 +1,370 @@
 package main
 
 import (
-	"fmt"
+	"websocket-master"
 	"log"
-	"math"
-	"math/rand"
-	"net/http"
-	"sync/atomic"
 	"time"
-
-	"github.com/gorilla/websocket"
+	"math"
+	"encoding/binary"
 )
 
-const (
-	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer.
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer.
-	maxMessageSize = 512
-)
-
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
-	idNum   = byte(0)
-)
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-// Client is a middleman between the websocket connection and the hub.
-type Client struct {
-	id    byte
-	login string
-
-	x     float64
-	y     float64
-	angle float64
-
-	isUp    bool
-	isDown  bool
-	isRight bool
-	isLeft  bool
-	isShoot int32
-
-	hub *Hub
-
-	// The websocket connection.
-	conn *websocket.Conn
-
-	// Buffered channel of outbound messages.
-	send chan []byte
-}
-
-func (c *Client) readPump() {
-	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
-	}()
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+func (c *Client) reader() {
+	c.conn.SetReadLimit(512)
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				log.Printf("error: %v", err)
 			}
 			break
 		}
-
-		fmt.Println(message)
-
+		//log.Println(message)
+		//W - 87, D - 68, A - 65, S - 83
 		switch message[0] {
-		case 0:
-			c.isUp = true
 		case 1:
-			c.isDown = true
+			switch message[1] {
+			case 87:
+				if c.goV > 0 {
+					continue
+				}
+				c.goV++
+				break
+			case 68:
+				if c.goH > 0 {
+					continue
+				}
+				c.goH++
+				break
+			case 65:
+				if c.goH < 0 {
+					continue
+				}
+				c.goH--
+				break
+			case 83:
+				if c.goV < 0 {
+					continue
+				}
+				c.goV--
+				break
+			}
+			break
 		case 2:
-			c.isLeft = true
+			switch message[1] {
+			case 83:
+				if c.goV > 0 {
+					continue
+				}
+				c.goV++
+				break
+			case 65:
+				if c.goH > 0 {
+					continue
+				}
+				c.goH++
+				break
+			case 68:
+				if c.goH < 0 {
+					continue
+				}
+				c.goH--
+				break
+			case 87:
+				if c.goV < 0 {
+					continue
+				}
+				c.goV--
+				break
+			}
+			break
 		case 3:
-			c.isRight = true
+			/*if len(message) != 5 {
+				return
+			}
+			for i := 0; i < 4; i++ {
+				c.angleB[i] = message[i+1]
+			}
+			c.angle = math.Float32frombits(binary.LittleEndian.Uint32(message[1:]))*/
+			break
 		case 4:
-			atomic.StoreInt32(&c.isShoot, 1)
+			if c.shoting_now {
+				break
+			}
+			c.shoting_now = true
+			c.shoting <- true
+			break
 		case 5:
-			c.isUp = false
+			if !c.shoting_now {
+				break
+			}
+			c.shoting_now = false
+			c.shoting <- false
+			break
 		case 6:
-			c.isDown = false
+			if len(message) != 5 {
+				return
+			}
+			for i := 0; i < 4; i++ {
+				c.a_gun_angleB[i] = message[i+1]
+			}
+			c.a_gun_angle = math.Float32frombits(binary.LittleEndian.Uint32(message[1:]))
+			break
 		case 7:
-			c.isLeft = false
-		case 8:
-			c.isRight = false
-		case 9:
-			atomic.StoreInt32(&c.isShoot, 0)
-		}
-
-		c.hub.broadcast <- []byte{c.id, message[0]}
-	}
-}
-
-// writePump pumps messages from the hub to the websocket connection.
-//
-// A goroutine running writePump is started for each connection. The
-// application ensures that there is at most one writer to a connection by
-// executing all writes from this goroutine.
-func (c *Client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		c.conn.Close()
-	}()
-	for {
-		select {
-		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				// The hub closed the channel.
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			if err := w.Close(); err != nil {
-				return
-			}
-		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (c *Client) emulateClient() {
-	var deltaTime = time.Now().UnixNano()
-	var lastShotTime = time.Now().UnixNano()
-
-	for {
-
-		deltaTime = time.Now().UnixNano() - deltaTime
-		var delta = float64(deltaTime) / 1000000
-		deltaTime = time.Now().UnixNano()
-
-		speed := float64(0)
-		if c.isUp {
-			speed += 2
-		}
-		if c.isDown {
-			speed -= 2
-		}
-		sin := math.Sin(c.angle)
-		cos := 1 - sin
-		if sin < 0 {
-			cos = 1 + sin
-		}
-
-		if atomic.LoadInt32(&c.isShoot) > 0 && lastShotTime+500000 < time.Now().UnixNano() {
-
-			bullet := Bullet{}
-			if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {
-				bullet.x += c.x + delta*speed*cos
+			//log.Println(c.base)
+			if c.base {
+				if c.x <= 1000 && c.y <= 1000 {
+					c.room.Base_A.Points += uint32(c.res[0] + c.res[1]*7 + c.res[2]*35)
+					c.points += uint32(c.res[0] + c.res[1]*7 + c.res[2]*35)
+					c.res = [3]uint16{0, 0, 0}
+				}
 			} else {
-				bullet.x = c.x - delta*speed*cos
+				if c.x >= 15000 && c.y >= 15000 {
+					c.room.Base_B.Points += uint32(c.res[0] + c.res[1]*7 + c.res[2]*35)
+					c.points += uint32(c.res[0] + c.res[1]*7 + c.res[2]*35)
+					c.res = [3]uint16{0, 0, 0}
+				}
 			}
-			bullet.y = c.y + delta*speed*sin
+			forSend := make([]byte, 7)
+			forSend[0] = 6
 
-			Bullets[&bullet] = struct{}{}
-		}
+			c.send <- forSend[:]
+			break
+		case 8:
+			forSend := make([]byte, 1)
 
-		if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {
-			c.x += delta * speed * cos
-		} else {
-			c.x -= delta * speed * cos
-		}
-		c.y += delta * speed * sin
+			forSend[0] = 11
 
-		if c.isLeft {
-			speed = delta * float64(90)
-		}
-		if c.isRight {
-			speed = -delta * float64(90)
-		}
-		//fmt.Println(speed)
-		c.angle += speed
-		if c.angle >= 360 {
-			c.angle -= 360
-		}
-		//fmt.Println(c.angle)
+			MG := make([]byte, c.Ship.Main_Guns*2+1)
+			MG[0] = c.Ship.Main_Guns
+			i := 1
+			for q, s := range c.Main_Guns {
+				MG[i] = q
+				MG[i+1] = s.t
+				i += 2
+			}
+			forSend = append(forSend, MG...)
 
-		<-time.NewTimer(time.Millisecond * 8).C
+			MG = make([]byte, c.Ship.Additional_Guns*2+1)
+			MG[0] = c.Ship.Additional_Guns
+			i = 1
+			for q, s := range c.Additional_Guns {
+				MG[i] = q
+				MG[i+1] = s.t
+				i += 2
+			}
+			forSend = append(forSend, MG...)
+
+			MG = make([]byte, c.Ship.Accelerators*2+1)
+			MG[0] = c.Ship.Accelerators
+			i = 1
+			for q, s := range c.Accelerators {
+				MG[i] = q
+				MG[i+1] = s.t
+				i += 2
+			}
+			forSend = append(forSend, MG...)
+
+			MG = make([]byte, c.Ship.Engine*2+1)
+			MG[0] = c.Ship.Engine
+			i = 1
+			for q, s := range c.Engine {
+				MG[i] = q
+				MG[i+1] = s.t
+				i += 2
+			}
+			forSend = append(forSend, MG...)
+
+			MG = make([]byte, c.Ship.Generators*2+1)
+			MG[0] = c.Ship.Generators
+			i = 1
+			for q, s := range c.Generators {
+				MG[i] = q
+				MG[i+1] = s.t
+				i += 2
+			}
+			forSend = append(forSend, MG...)
+
+			c.send <- forSend[:]
+			break
+		case 9:
+			if uint8(message[1]) < 3 {
+				if message[1] == c.Ship.Type {
+					continue
+				}
+				if message[1] == 0 {
+					c.Ship = Ships[0]
+					for i, _ := range c.Main_Guns {
+						delete(c.Main_Guns, i)
+					}
+					c.Main_Guns[0] = &GunOnShip{80,160, 0}
+					c.SetShip();
+					continue
+				}
+				if message[1] == 1 {
+					if c.points >= 1 {
+						c.Ship = Ships[1]
+						for i, _ := range c.Main_Guns {
+							delete(c.Main_Guns, i)
+						}
+						c.Main_Guns[0] = &GunOnShip{80,160, 0}
+						c.points -= 1
+						c.SetShip();
+					}
+					continue
+				}
+				if message[1] == 2 {
+					if c.points >= 1 {
+						c.Ship = Ships[2]
+						for i, _ := range c.Main_Guns {
+							delete(c.Main_Guns, i)
+						}
+						c.Main_Guns[0] = &GunOnShip{20,240, 0}
+						c.Main_Guns[1] = &GunOnShip{110,240, 0}
+						c.points -= 1
+						c.SetShip();
+					}
+					continue
+				}
+			}
+			break
+		}
 	}
 }
 
-// serveWs handles websocket requests from the peer.
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	client := &Client{hub: hub,
-		conn:    conn,
-		send:    make(chan []byte, 256),
-		login:   r.FormValue("login"),
-		x:       rand.Float64() * 32,
-		y:       rand.Float64() * 32,
-		isUp:    false,
-		isDown:  false,
-		isRight: false,
-		isLeft:  false,
-		isShoot: 0,
-	}
-	client.hub.register <- client
+func (c *Client) writer() {
+	for {
+		message, ok := <-c.send
+		c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if !ok {
+			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+			return
+		}
 
-	// Allow collection of memory referenced by the caller by doing all work in
-	// new goroutines.
-	go client.writePump()
-	go client.readPump()
-	go client.emulateClient()
+		w, err := c.conn.NextWriter(websocket.BinaryMessage)
+		if err != nil {
+			return
+		}
+		w.Write(message)
+		if err := w.Close(); err != nil {
+			return
+		}
+	}
+}
+
+type Shell struct {
+	x, y   float64
+	close  bool
+	damage uint16
+	t      bool
+}
+
+func NewClient(ws *websocket.Conn, name string, x, y float64, room *Room, base bool) *Client {
+	return &Client{
+		ws,
+		name,
+		make(chan []byte, 32),
+		x,
+		y,
+		0,
+		0,
+		0,
+		0,
+		[]byte{0, 0, 0, 0},
+		0,
+		[]byte{0, 0, 0, 0},
+		10,
+		150,
+		150,
+		10,
+		10,
+		make(chan bool, 2),
+		false,
+		50,
+		false,
+		10,
+		50,
+		[3]uint16{0, 0, 0},
+		room,
+		base,
+		Ships[0],
+		make(map[uint8]*GunOnShip),
+		make(map[uint8]*GunOnShip),
+		make(map[uint8]*Generator),
+		make(map[uint8]*Accelerator),
+		make(map[uint8]*Engine),
+	}
+}
+
+func (c *Client) SetHP() {
+	hp := uint16(0)
+	hp += c.Ship.HP
+	c.max_hp = hp
+}
+
+func (c *Client) SetShield() {
+	hp := uint16(0)
+	hp += uint16(c.Ship.Shield)
+	c.max_shield = hp
+}
+
+func (c *Client) SetShip() {
+	c.SetSpeed()
+	c.SetHealth()
+	c.res = [3]uint16{0, 0, 0}
+	c.space = c.Ship.Space
+}
+
+func (c *Client) SetHealth() {
+	c.max_hp = c.Ship.HP
+	c.hp = c.Ship.HP
+}
+func (c *Client) SetSpeed() {
+	s := float64(0)
+	for _, o := range c.Engine {
+		s += o.Speed
+	}
+	c.speed = s * c.Ship.Speed
+}
+
+type Client struct {
+	conn *websocket.Conn
+	name string
+	send chan []byte
+	x, y float64
+	goH  int8
+	goV  int8
+
+	points uint32
+
+	a_gun_angle  float32
+	a_gun_angleB []byte
+
+	angle  float32
+	angleB []byte
+	speed  float64
+
+	hp     uint16
+	max_hp uint16
+
+	shield     uint16
+	max_shield uint16
+
+	shoting      chan bool
+	shoting_now  bool
+	shell_speed  float64
+	close        bool
+	shell_damage uint16
+
+	space uint16
+	res   [3]uint16
+
+	room *Room
+	base bool
+	Ship *Ship
+
+	Main_Guns       map[uint8]*GunOnShip
+	Additional_Guns map[uint8]*GunOnShip
+	Generators      map[uint8]*Generator
+	Accelerators    map[uint8]*Accelerator
+	Engine          map[uint8]*Engine
 }
