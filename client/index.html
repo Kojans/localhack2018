@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+</head>
+
+<style type="text/css">
+html, body{
+	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+}
+
+.canvass{
+	overflow: hidden;
+	width: 100%;
+	height: 100%;
+}
+.canvass canvas{
+	width: 100%;
+	height: 100%;
+}
+</style>
+<body>
+
+	<div class="canvass">
+		<canvas id="spase1"></canvas>
+		<canvas id="spase2"></canvas>
+		<canvas id="shooter"></canvas>
+	</div>
+	
+
+	<script type="text/javascript">
+		spase1.width  = window.innerWidth;
+		spase1.height = window.innerHeight;
+
+		spase2.width  = window.innerWidth;
+		spase2.height = window.innerHeight;
+
+		shooter.width  = window.innerWidth;
+		shooter.height = window.innerHeight;
+		
+		var shipSize = 64
+
+
+
+		var canvas = document.getElementById("spase1");
+		var ctx = canvas.getContext("2d");
+		ctx.imageSmoothingEnabled = false;
+		ctx.fillStyle = "rgb(25,25,25)"
+		ctx.fillRect(0,0,canvas.width,canvas.height)
+
+		ctx.fillStyle = "white"
+		for (var i = 0; i < 1000; i++) {
+			ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 3 * Math.random(), 3 * Math.random())
+		}
+		var img = new Image()
+		
+		img.onload = function(){
+			ctx.drawImage(img ,canvas.width / 2 - shipSize, canvas.height / 2 - shipSize )
+		}
+		img.src = 'ship.png'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		function WebSocketConnect() {
+
+		window.WebSocket = window.WebSocket || window.MozWebSocket;
+		if (!window.WebSocket){
+			window.body.innerHTML = 'Sorry, but your browser doesn\'t support WebSocket.'
+			return
+		}
+		this.connection = new WebSocket('ws://127.0.0.1:1337')
+
+
+		this.sendPoint = function(row, col, color) {
+			/*var myJsonString = JSON.stringify({type: "pixel", y: row, x: col, r: color.r, g: color.g, b: color.b});*/
+			ws.connection.send(myJsonString);
+		}
+
+		this.connection.onopen = function () {
+		}
+
+		this.connection.onerror = function (error) {
+		    //document.body.innerHTML = 'Sorry, but there\'s some problem with your connection or the server is down.'
+			return
+		}
+
+		this.connection.onmessage = function (message) {
+
+			/*var json = JSON.parse(message.data)*/
+
+			/*if (json.type === "img") 
+				pw.setBase64(json.data)
+			else if(json.type === "pixel")
+				pw.setPoint(json.y, json.x, {r: json.r, g: json.g, b: json.b})*/
+
+		}
+
+	}
+
+
+	</script>
+</body>
+</html>
