@@ -16,10 +16,14 @@ html, body{
 	overflow: hidden;
 	width: 100%;
 	height: 100%;
+	position: relative;
 }
 .canvass canvas{
 	width: 100%;
 	height: 100%;
+	position: absolute;
+	top: 0;
+	left: 0;
 }
 </style>
 <body>
@@ -32,35 +36,163 @@ html, body{
 	
 
 	<script type="text/javascript">
-		spase1.width  = window.innerWidth;
-		spase1.height = window.innerHeight;
+		var shipSize = 64 // размер корабля в пикселях
+		var areaSize = 32 // размер игрового поля в кораблях, в пикселях = areaSize * shipSize
+		var shipSpeedRotate = 90; //скорость вращения г/сек
+		var shipSpeed = 2; //скорость корабля кораблей/сек
 
-		spase2.width  = window.innerWidth;
-		spase2.height = window.innerHeight;
+		var width = window.innerWidth
+		var height = window.innerHeight
 
-		shooter.width  = window.innerWidth;
-		shooter.height = window.innerHeight;
+		var spase1 = document.getElementById("spase1")
+		spase1.width = width
+		spase1.height = height
+
+		var spase2 = document.getElementById("spase2")
+		spase2.width  = width
+		spase2.height = height
+
+		var shooter = document.getElementById("shooter")
+		shooter.width  = width
+		shooter.height = height
+
+
+		var objects = [
+			{x: 200, y: 700},
+			{x: 100, y: 500}
+		]
+
+
 		
-		var shipSize = 64
-
-
-
-		var canvas = document.getElementById("spase1");
-		var ctx = canvas.getContext("2d");
-		ctx.imageSmoothingEnabled = false;
-		ctx.fillStyle = "rgb(25,25,25)"
-		ctx.fillRect(0,0,canvas.width,canvas.height)
-
-		ctx.fillStyle = "white"
-		for (var i = 0; i < 1000; i++) {
-			ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 3 * Math.random(), 3 * Math.random())
-		}
-		var img = new Image()
 		
-		img.onload = function(){
-			ctx.drawImage(img ,canvas.width / 2 - shipSize, canvas.height / 2 - shipSize )
+		drawSpace(spase1)
+
+		function drawSpace(canvas) {
+			var ctx = canvas.getContext('2d')
+			ctx.imageSmoothingEnabled = false
+			ctx.fillStyle = 'rgb(25,25,25)'
+			ctx.fillRect(0,0, canvas.width, canvas.height)
+	
+			ctx.fillStyle = 'white'
+			for (var i = 0; i < 2000; i++) {
+				ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 3 * Math.random(), 3 * Math.random())
+			}
 		}
-		img.src = 'ship.png'
+
+		
+		var ctx = shooter.getContext("2d")
+
+		var ship = new Image()
+		ship.src = 'ship.png'
+
+
+		var offset = {x:0, y:0}
+		document.onkeydown = move
+		document.onkeyup = stopMove
+		var moving = 0
+		var rotate = 0
+		var angle = 0
+
+		var isKeyDown = false
+		var isKeyUp = false
+		var isKeyLeft = false
+		var isKeyRight = false
+		var isKeySpace = false
+
+		function move(e) {
+			if(e.code == 'KeyS' || e.code == 'ArrowDown'){
+				moving = -1
+				if (!isKeyDown) {
+					sendInt(1)
+					isKeyDown = true
+				}
+				
+			}
+			else if(e.code == 'KeyW' || e.code == 'ArrowUp'){
+				moving = 1
+				if (!isKeyUp) {
+					sendInt(0)
+					isKeyUp = true
+				}
+
+			}
+			else if(e.code == 'KeyA' || e.code == 'ArrowLeft'){
+				rotate = -1
+				if (!isKeyLeft) {
+					sendInt(2)
+					isKeyLeft = true
+				}
+			}
+			else if(e.code == 'KeyD' || e.code == 'ArrowRight'){
+				rotate = 1
+				if (!isKeyRight) {
+					sendInt(3)
+					isKeyRight = true
+				}
+			}
+			else if (e.code == 'Space'){
+				if (!isKeySpace) {
+					sendInt(4)
+					isKeySpace = true
+				}
+			}
+		}
+
+		function stopMove(e) {
+
+			if(e.code == 'KeyS' || e.code == 'ArrowDown'){
+				moving = 0
+				isKeyDown = false 
+				sendInt(6)
+			}
+			else if ( e.code == 'KeyW' || e.code == 'ArrowUp'){
+				moving = 0
+				isKeyUp = false
+				sendInt(5)
+			}
+			else if(e.code == 'KeyA' || e.code == 'ArrowLeft'){
+				rotate = 0
+				isKeyLeft = false
+				sendInt(7)
+			}
+			else if ( e.code == 'KeyD' || e.code == 'ArrowRight'){
+				rotate = 0
+				isKeyRight = false
+				sendInt(8)
+			}
+			else if (e.code == 'Space'){
+				isKeySpace = false
+				sendInt(9)
+			}
+		}
+
+		function sendInt(int) {
+			var view = new Uint8Array(new ArrayBuffer(1))
+			view[0] = int
+			connection.send(view)
+			console.log("send+"+int)
+		}
+
+
+		var offset = {x:0, y:0}
+		function drawShip() {
+			
+			angle = angle + rotate * shipSpeedRotate * deltaTime
+			if(angle >= 360) angle -= 360
+
+
+
+			ctx.clearRect(0, 0, shooter.width, shooter.height)
+
+			ctx.save();
+			ctx.translate(shooter.width/2,shooter.height/2)
+			ctx.rotate(inRad(angle));
+
+			ctx.drawImage(ship, -ship.width/2, -ship.height/2)
+
+			ctx.restore();
+
+			
 
 
 
@@ -71,65 +203,72 @@ html, body{
 
 
 
+			for (var i = objects.length - 1; i >= 0; i--) {
+				ctx.fillStyle = 'yellow'
+				ctx.fillRect(objects[i].x, objects[i].y, 64, 64)
+			}
+
+		}
+		function inRad(num) {
+			return num * Math.PI / 180;
+		}
+
+		
+		var lastUpdate = Date.now()
+		var deltaTime  = 0
+		update()
+		function update() {
+			var now = Date.now()
+			deltaTime = (now - lastUpdate) / 1000
+			lastUpdate = now
+			
+
+			
+
+			
+
+
+			drawShip()
+
+
+
+
+			requestAnimationFrame(update)
+		}
 
 
 
 
 
 
+		/// WebSocket
+		//var userName = prompt("Please enter your name");
+		userName = "player" + Math.random() * 80000
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-		function WebSocketConnect() {
 
 		window.WebSocket = window.WebSocket || window.MozWebSocket;
 		if (!window.WebSocket){
-			window.body.innerHTML = 'Sorry, but your browser doesn\'t support WebSocket.'
-			return
+			alert('Sorry, but your browser doesn\'t support WebSocket.')
 		}
-		this.connection = new WebSocket('ws://127.0.0.1:1337')
+		connection = new WebSocket('ws://10.193.4.237:8080/ws?login='+userName)
 
 
-		this.sendPoint = function(row, col, color) {
-			/*var myJsonString = JSON.stringify({type: "pixel", y: row, x: col, r: color.r, g: color.g, b: color.b});*/
-			ws.connection.send(myJsonString);
-		}
 
-		this.connection.onopen = function () {
+		connection.onopen = function () {
+			connection.send(userName);
 		}
 
-		this.connection.onerror = function (error) {
-		    //document.body.innerHTML = 'Sorry, but there\'s some problem with your connection or the server is down.'
+		connection.onerror = function (error) {
+		    alert('Sorry, but there\'s some problem with your connection or the server is down.')
 			return
 		}
 
-		this.connection.onmessage = function (message) {
-
-			/*var json = JSON.parse(message.data)*/
-
-			/*if (json.type === "img") 
-				pw.setBase64(json.data)
-			else if(json.type === "pixel")
-				pw.setPoint(json.y, json.x, {r: json.r, g: json.g, b: json.b})*/
+		connection.onmessage = function (message) {
+			console.log(message)
 
 		}
 
-	}
+
 
 
 	</script>
