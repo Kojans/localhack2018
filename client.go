@@ -143,9 +143,15 @@ func (c *Client) writePump() {
 }
 
 func (c *Client) emulateClient() {
-	var deltaTime int64 = time.Now().UnixNano()
+	var deltaTime = time.Now().UnixNano()
+	var lastShotTime = time.Now().UnixNano()
+
 	for {
-		var deltaTime int64 = time.Now().UnixNano() - deltaTime
+		if c.isShoot && lastShotTime+500000 < time.Now().UnixNano() {
+
+		}
+
+		var deltaTime = time.Now().UnixNano() - deltaTime
 		var delta = float64(deltaTime) / 1000000
 		speed := float64(0)
 		if c.isUp {
