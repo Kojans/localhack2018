@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
@@ -32,6 +35,10 @@ func (h *Hub) run() {
 		tik := time.NewTicker(8 * time.Millisecond)
 		select {
 		case client := <-h.register:
+
+			//bs := make([]byte, 4)
+			//binary.LittleEndian.PutUint32(bs, len(h.clients))
+			//sendData := []byte{};
 			for _, clientCurr := range h.clients {
 				x := float64ToByte(clientCurr.x)
 				y := float64ToByte(clientCurr.y)
@@ -42,6 +49,7 @@ func (h *Hub) run() {
 					a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]}
 			}
 			h.clients[idNum] = client
+			idNum++
 		case client := <-h.unregister:
 			if _, ok := h.clients[client.id]; ok {
 				delete(h.clients, client.id)
@@ -49,9 +57,11 @@ func (h *Hub) run() {
 			}
 		case message := <-h.broadcast:
 			for _, client := range h.clients {
+				fmt.Println(222)
 				select {
 				case client.send <- message:
 				default:
+					fmt.Println(111)
 					close(client.send)
 					delete(h.clients, client.id)
 				}

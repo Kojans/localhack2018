@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -33,6 +35,9 @@ var (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 // Client is a middleman between the websocket connection and the hub.
@@ -48,7 +53,7 @@ type Client struct {
 	isDown  bool
 	isRight bool
 	isLeft  bool
-	isShoot bool
+	isShoot int32
 
 	hub *Hub
 
@@ -76,6 +81,8 @@ func (c *Client) readPump() {
 			break
 		}
 
+		fmt.Println(message)
+
 		switch message[0] {
 		case 0:
 			c.isUp = true
@@ -86,7 +93,7 @@ func (c *Client) readPump() {
 		case 3:
 			c.isRight = true
 		case 4:
-			c.isShoot = true
+			atomic.StoreInt32(&c.isShoot, 1)
 		case 5:
 			c.isUp = false
 		case 6:
@@ -96,10 +103,10 @@ func (c *Client) readPump() {
 		case 8:
 			c.isRight = false
 		case 9:
-			c.isShoot = false
+			atomic.StoreInt32(&c.isShoot, 0)
 		}
 
-		c.hub.broadcast <- message
+		c.hub.broadcast <- []byte{c.id, message[0]}
 	}
 }
 
@@ -148,8 +155,10 @@ func (c *Client) emulateClient() {
 
 	for {
 
-		var deltaTime = time.Now().UnixNano() - deltaTime
+		deltaTime = time.Now().UnixNano() - deltaTime
 		var delta = float64(deltaTime) / 1000000
+		deltaTime = time.Now().UnixNano()
+
 		speed := float64(0)
 		if c.isUp {
 			speed += 2
@@ -163,7 +172,7 @@ func (c *Client) emulateClient() {
 			cos = 1 + sin
 		}
 
-		if c.isShoot && lastShotTime+500000 < time.Now().UnixNano() {
+		if atomic.LoadInt32(&c.isShoot) > 0 && lastShotTime+500000 < time.Now().UnixNano() {
 
 			bullet := Bullet{}
 			if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {
@@ -189,10 +198,12 @@ func (c *Client) emulateClient() {
 		if c.isRight {
 			speed = -delta * float64(90)
 		}
+		//fmt.Println(speed)
 		c.angle += speed
 		if c.angle >= 360 {
 			c.angle -= 360
 		}
+		//fmt.Println(c.angle)
 
 		<-time.NewTimer(time.Millisecond * 8).C
 	}
@@ -215,7 +226,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		isDown:  false,
 		isRight: false,
 		isLeft:  false,
-		isShoot: false,
+		isShoot: 0,
 	}
 	client.hub.register <- client
 
