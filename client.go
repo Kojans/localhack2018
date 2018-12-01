@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"time"
@@ -43,6 +44,12 @@ type Client struct {
 	y     float64
 	angle float64
 
+	isUp    bool
+	isDown  bool
+	isRight bool
+	isLeft  bool
+	isShoot bool
+
 	hub *Hub
 
 	// The websocket connection.
@@ -52,11 +59,6 @@ type Client struct {
 	send chan []byte
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-//
-// The application runs readPump in a per-connection goroutine. The application
-// ensures that there is at most one reader on a connection by executing all
-// reads from this goroutine.
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -73,6 +75,30 @@ func (c *Client) readPump() {
 			}
 			break
 		}
+
+		switch message[0] {
+		case 0:
+			c.isUp = true
+		case 1:
+			c.isDown = true
+		case 2:
+			c.isLeft = true
+		case 3:
+			c.isRight = true
+		case 4:
+			c.isShoot = true
+		case 5:
+			c.isUp = false
+		case 6:
+			c.isDown = false
+		case 7:
+			c.isLeft = false
+		case 8:
+			c.isRight = false
+		case 9:
+			c.isShoot = false
+		}
+
 		c.hub.broadcast <- message
 	}
 }
@@ -116,6 +142,46 @@ func (c *Client) writePump() {
 	}
 }
 
+func (c *Client) emulateClient() {
+	var deltaTime int64 = time.Now().UnixNano()
+	for {
+		var deltaTime int64 = time.Now().UnixNano() - deltaTime
+		var delta = float64(deltaTime) / 1000000
+		speed := float64(0)
+		if c.isUp {
+			speed += 2
+		}
+		if c.isDown {
+			speed -= 2
+		}
+		sin := math.Sin(c.angle)
+		cos := 1 - sin
+		if sin < 0 {
+			cos = 1 + sin
+		}
+
+		if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {
+			c.x += delta * speed * cos
+		} else {
+			c.x -= delta * speed * cos
+		}
+		c.y += delta * speed * sin
+
+		if c.isLeft {
+			speed = delta * float64(90)
+		}
+		if c.isRight {
+			speed = -delta * float64(90)
+		}
+		c.angle += speed
+		if c.angle >= 360 {
+			c.angle -= 360
+		}
+
+		<-time.NewTimer(time.Millisecond * 8).C
+	}
+}
+
 // serveWs handles websocket requests from the peer.
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -123,11 +189,23 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), login: r.FormValue("login"), x: rand.Float64() * 32, y: rand.Float64() * 32}
+	client := &Client{hub: hub,
+		conn:    conn,
+		send:    make(chan []byte, 256),
+		login:   r.FormValue("login"),
+		x:       rand.Float64() * 32,
+		y:       rand.Float64() * 32,
+		isUp:    false,
+		isDown:  false,
+		isRight: false,
+		isLeft:  false,
+		isShoot: false,
+	}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
 	// new goroutines.
 	go client.writePump()
 	go client.readPump()
+	go client.emulateClient()
 }
