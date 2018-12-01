@@ -147,9 +147,6 @@ func (c *Client) emulateClient() {
 	var lastShotTime = time.Now().UnixNano()
 
 	for {
-		if c.isShoot && lastShotTime+500000 < time.Now().UnixNano() {
-
-		}
 
 		var deltaTime = time.Now().UnixNano() - deltaTime
 		var delta = float64(deltaTime) / 1000000
@@ -164,6 +161,19 @@ func (c *Client) emulateClient() {
 		cos := 1 - sin
 		if sin < 0 {
 			cos = 1 + sin
+		}
+
+		if c.isShoot && lastShotTime+500000 < time.Now().UnixNano() {
+
+			bullet := Bullet{}
+			if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {
+				bullet.x += c.x + delta*speed*cos
+			} else {
+				bullet.x = c.x - delta*speed*cos
+			}
+			bullet.y = c.y + delta*speed*sin
+
+			Bullets[&bullet] = struct{}{}
 		}
 
 		if c.angle >= 0 && c.angle < 90 || c.angle < 270 && c.angle > 180 {

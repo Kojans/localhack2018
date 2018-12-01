@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
 type Hub struct {
@@ -27,16 +29,17 @@ func newHub() *Hub {
 
 func (h *Hub) run() {
 	for {
+		tik := time.NewTicker(8 * time.Millisecond)
 		select {
 		case client := <-h.register:
 			for _, clientCurr := range h.clients {
 				x := float64ToByte(clientCurr.x)
 				y := float64ToByte(clientCurr.y)
 				a := float64ToByte(clientCurr.angle)
-				client.send <- append([]byte{}, clientCurr.id,
+				client.send <- []byte{clientCurr.id, 0,
 					x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7],
 					y[0], y[1], y[2], y[3], y[4], y[5], y[6], y[7],
-					a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7])
+					a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]}
 			}
 			h.clients[idNum] = client
 		case client := <-h.unregister:
@@ -51,6 +54,25 @@ func (h *Hub) run() {
 				default:
 					close(client.send)
 					delete(h.clients, client.id)
+				}
+			}
+		case <-tik.C:
+			for _, client := range h.clients {
+				for bullet := range Bullets {
+					if bullet.x > client.x-0.5 && bullet.x < client.x+0.5 &&
+						bullet.y > client.y-0.5 && bullet.y < client.y+0.5 {
+						h.unregister <- client
+
+						delete(Bullets, bullet)
+
+						x := float64ToByte(client.x)
+						y := float64ToByte(client.y)
+						a := float64ToByte(client.angle)
+						h.broadcast <- []byte{client.id, 1,
+							x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7],
+							y[0], y[1], y[2], y[3], y[4], y[5], y[6], y[7],
+							a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]}
+					}
 				}
 			}
 		}
