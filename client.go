@@ -27,7 +27,7 @@ const (
 var (
 	newline = []byte{'\n'}
 	space   = []byte{' '}
-	idNum = byte(0)
+	idNum   = byte(0)
 )
 
 var upgrader = websocket.Upgrader{
@@ -37,12 +37,11 @@ var upgrader = websocket.Upgrader{
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-
-	id byte
+	id    byte
 	login string
 
-	x float64
-	y float64
+	x     float64
+	y     float64
 	angle float64
 
 	hub *Hub
@@ -106,13 +105,6 @@ func (c *Client) writePump() {
 				return
 			}
 			w.Write(message)
-
-			// Add queued chat messages to the current websocket message.
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				w.Write(newline)
-				w.Write(<-c.send)
-			}
 
 			if err := w.Close(); err != nil {
 				return
